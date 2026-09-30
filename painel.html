@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STEVE PAINEL</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#14171a;--card:#1e2226;--card2:#262b30;--tx:#f2f2f0;--mut:#9aa3ab;--acc:#ff7a1a;--acc2:#ffb300;--ok:#33c17a;--bad:#ff5c5c;--bd:#31363b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--bd);padding:10px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+header b{font-size:18px;font-weight:900}header b span{color:var(--acc)}
+nav{display:flex;gap:6px;flex-wrap:wrap;flex:1}
+nav button,.btn{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:8px 14px;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
+nav button.on,.btn.pri{background:var(--acc);border-color:var(--acc);color:#1a1204}
+.k{color:var(--mut);font-size:12.5px}
+main{max-width:1250px;margin:0 auto;padding:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px}
+.kpi .v{font-size:26px;font-weight:800;letter-spacing:-.02em}
+h3{margin:18px 0 8px;font-size:16px}
+.tw{overflow-x:auto;background:var(--card);border:1px solid var(--bd);border-radius:14px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--bd);white-space:nowrap}
+th{color:var(--mut);font-weight:600;font-size:12px;position:sticky;top:0;background:var(--card)}
+tr.cl{cursor:pointer}tr.cl:hover td{background:var(--card2)}
+td.dt{white-space:normal;color:var(--mut);background:var(--card2)}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:3px 9px;border-radius:8px}
+.pill.ok{background:#33c17a2e;color:var(--ok)}.pill.warn{background:#ffb3002e;color:var(--acc2)}.pill.bad{background:#ff5c5c2e;color:var(--bad)}.pill.mut{background:var(--card2);color:var(--mut)}
+input,select{background:var(--card2);color:var(--tx);border:1px solid var(--bd);border-radius:10px;padding:9px 12px;font:inherit}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.bars{display:flex;align-items:flex-end;gap:10px;height:120px}
+.bars div{flex:1;text-align:center;font-size:11px;color:var(--mut)}
+.bars i{display:block;background:var(--acc);border-radius:5px 5px 0 0;margin-bottom:4px}
+#map{height:calc(100vh - 110px);min-height:420px;border-radius:14px;border:1px solid var(--bd)}
+a{color:var(--ok);text-decoration:none}
+.login{max-width:360px;margin:12vh auto;display:grid;gap:10px}
+.empty{color:var(--mut);text-align:center;padding:26px}
+</style>
+</head>
+<body>
+<header><b>🛠️ STEVE<span>PAINEL</span></b><nav id="nav"></nav><span class="k" id="upd"></span><button class="btn" id="sair" style="display:none">Sair</button></header>
+<main id="app"></main>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+"use strict";
+const SB="https://bkjywijgogeyekwgqawq.supabase.co",KEY="sb_publishable_v8SlYZngr9uQ0vpBxlPDPg_GBKN_-Or",SK="sb_admin";
+const $=id=>document.getElementById(id),brl=n=>(+n||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const dt=t=>t?new Date(t).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
+const ago=t=>{if(!t)return"—";const s=(Date.now()-new Date(t))/1000;return s<60?"agora":s<3600?Math.floor(s/60)+" min":s<86400?Math.floor(s/3600)+" h":Math.floor(s/86400)+" d"};
+const wa=t=>{const d=String(t||"").replace(/\D/g,"");return d?`<a target="_blank" href="https://wa.me/${d.length<=11?"55"+d:d}">${esc(t)}</a>`:"—"};
+const S=a=>a.reduce((t,c)=>t+(+c.valor||0),0);
+const TP={passageiro:"🧍 Passageiro",entrega:"📦 Entrega"};
+const ST={pendente:["⏳ Pendente","warn"],proposta:["💬 Proposta","warn"],aceita:["✅ Aceita","ok"],a_caminho:["🏍️ A caminho","ok"],concluida:["🏁 Concluída","ok"],recusada:["✖ Recusada","bad"],cancelada:["Cancelada","bad"]};
+const ATIVAS=["pendente","proposta","aceita","a_caminho"];
+const pill=s=>{const x=ST[s]||[s,"mut"];return `<span class="pill ${x[1]}">${x[0]}</span>`};
+const sess=()=>{try{return JSON.parse(localStorage.getItem(SK)||"null")}catch(e){return null}};
+const save=j=>localStorage.setItem(SK,JSON.stringify({access_token:j.access_token,refresh_token:j.refresh_token,expires_at:j.expires_at||Math.floor(Date.now()/1000+(j.expires_in||3600))}));
+async function auth(p,b){const r=await fetch(SB+"/auth/v1"+p,{method:"POST",headers:{apikey:KEY,"Content-Type":"application/json"},body:JSON.stringify(b)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.msg||j.error_description||j.message||"erro "+r.status);return j}
+async function token(){const s=sess();if(!s)throw new Error("sem login");if(s.expires_at>Date.now()/1000+60)return s.access_token;const j=await auth("/token?grant_type=refresh_token",{refresh_token:s.refresh_token});save(j);return j.access_token}
+async function api(p,post){const r=await fetch(SB+"/rest/v1/"+p,{method:post?"POST":"GET",headers:{apikey:KEY,Authorization:"Bearer "+await token(),"Content-Type":"application/json"},body:post?"{}":undefined});if(!r.ok)throw new Error(r.status+": "+(await r.text()).slice(0,140));return r.json()}
+
+let D={c:[],m:[]},tab="geral",F={st:"",tp:"",q:""},open=new Set(),M=null,G=null,timer=null;
+const TABS=[["geral","📊 Visão geral"],["corridas","📦 Corridas"],["motoboys","🏍️ Motoboys"],["clientes","👥 Clientes"],["mapa","🗺️ Mapa ao vivo"]];
+
+function login(msg){
+  clearInterval(timer);$("nav").innerHTML="";$("sair").style.display="none";
+  $("app").innerHTML=`<div class="login card"><b style="font-size:17px">🔐 Acesso do administrador</b><input id="e" type="email" placeholder="E-mail"><input id="s" type="password" placeholder="Senha"><button class="btn pri" id="go">Entrar</button><div class="k" id="msg">${esc(msg||"")}</div></div>`;
+  $("go").onclick=async()=>{try{save(await auth("/token?grant_type=password",{email:$("e").value.trim(),password:$("s").value}));iniciar()}catch(e){$("msg").textContent=e.message}};
+}
+async function iniciar(){
+  try{
+    const ok=await api("rpc/is_admin",true);
+    if(ok!==true){localStorage.removeItem(SK);login("Esta conta não é administradora. Rode o SQL de administrador no Supabase.");return}
+  }catch(e){localStorage.removeItem(SK);login("Falha ao entrar: "+e.message);return}
+  $("sair").style.display="";
+  $("nav").innerHTML=TABS.map(t=>`<button data-t="${t[0]}">${t[1]}</button>`).join("");
+  $("nav").querySelectorAll("button").forEach(b=>b.onclick=()=>{tab=b.dataset.t;if(M){M.remove();M=null}$("app").innerHTML="";draw()});
+  await load();clearInterval(timer);timer=setInterval(load,10000);
+}
+async function load(){
+  try{
+    const d=new Date(Date.now()-30*864e5).toISOString();
+    D.c=await api("corridas?select=*&criado_em=gte."+d+"&order=criado_em.desc&limit=1000");
+    try{D.m=await api("motoboys?select=id,nome,telefone,preco_km,online,lat,lng,atualizado_em")}
+    catch(e){D.m=await api("motoboys?select=id,nome,preco_km,online,lat,lng,atualizado_em")}
+    $("upd").textContent="Atualizado "+new Date().toLocaleTimeString("pt-BR");
+    draw();
+  }catch(e){$("upd").textContent="Erro: "+e.message}
+}
+const mNome=id=>{const m=D.m.find(x=>x.id===id);return m?m.nome:"—"};
+const onl=m=>m.online&&m.atualizado_em&&Date.now()-new Date(m.atualizado_em)<10*60000;
+function tbl(h,rows,cls){return `<div class="tw"><table><thead><tr>${h.map(x=>`<th>${x}</th>`).join("")}</tr></thead><tbody>${rows.join("")||`<tr><td colspan="${h.length}" class="empty">Sem dados</td></tr>`}</tbody></table></div>`}
+
+function draw(){
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.t===tab));
+  ({geral,corridas,motoboys,clientes,mapa})[tab]();
+}
+
+function geral(){
+  const h0=new Date();h0.setHours(0,0,0,0);
+  const hoje=D.c.filter(c=>new Date(c.criado_em)>=h0),conc=hoje.filter(c=>c.status==="concluida");
+  const fin=D.c.filter(c=>["concluida","recusada","cancelada"].includes(c.status));
+  const notas=D.c.filter(c=>c.avaliacao),nota=notas.length?(notas.reduce((t,c)=>t+c.avaliacao,0)/notas.length).toFixed(1)+" ⭐":"—";
+  const K=(t,v,s)=>`<div class="card kpi"><div class="k">${t}</div><div class="v">${v}</div><div class="k">${s||"&nbsp;"}</div></div>`;
+  const dias=[...Array(7)].map((_,i)=>{const a=new Date(h0);a.setDate(a.getDate()-6+i);const b=new Date(a);b.setDate(b.getDate()+1);const l=D.c.filter(c=>c.status==="concluida"&&new Date(c.criado_em)>=a&&new Date(c.criado_em)<b);return{d:a.toLocaleDateString("pt-BR",{weekday:"short"}),v:S(l),n:l.length}});
+  const mx=Math.max(...dias.map(x=>x.v),1);
+  const online=D.m.filter(onl).length;
+  $("app").innerHTML=`<div class="grid">
+    ${K("Motoboys online",online,"de "+D.m.length+" cadastrados")}
+    ${K("Corridas hoje",hoje.length,"🧍 "+hoje.filter(c=>c.tipo!=="entrega").length+" · 📦 "+hoje.filter(c=>c.tipo==="entrega").length)}
+    ${K("Em andamento",D.c.filter(c=>ATIVAS.includes(c.status)).length)}
+    ${K("Concluídas hoje",conc.length)}
+    ${K("Faturamento hoje",brl(S(conc)),"ticket "+brl(conc.length?S(conc)/conc.length:0))}
+    ${K("Recusadas/canceladas hoje",hoje.filter(c=>["recusada","cancelada"].includes(c.status)).length)}
+    ${K("Taxa de conclusão (30 d)",fin.length?Math.round(fin.filter(c=>c.status==="concluida").length/fin.length*100)+"%":"—")}
+    ${K("Nota média (30 d)",nota,notas.length+" avaliações")}
+  </div>
+  <h3>Faturamento – últimos 7 dias</h3>
+  <div class="card"><div class="bars">${dias.map(x=>`<div><span>${x.v?brl(x.v):""}</span><i style="height:${Math.max(4,x.v/mx*80)}px"></i>${x.d}<br>${x.n} corr.</div>`).join("")}</div></div>
+  <h3>Atividade recente</h3>${lista(D.c.slice(0,12))}`;
+}
+
+function lista(l){
+  return tbl(["Quando","Tipo","Status","Cliente","Motoboy","Trajeto","Km","Valor","Nota"],l.map(c=>{
+    const o=open.has(c.id);
+    return `<tr class="cl" data-id="${c.id}"><td>${dt(c.criado_em)}</td><td>${TP[c.tipo]||TP.passageiro}</td><td>${pill(c.status)}</td><td>${esc(c.cliente_nome)}<br>${wa(c.cliente_tel)}</td><td>${esc(mNome(c.motoboy_id))}</td><td>${c.origem_end?"🟢 "+esc(c.origem_end)+"<br>":""}🏁 ${esc(c.destino_end)}</td><td>${(+c.distancia_km||0).toFixed(1)}</td><td><b>${brl(c.valor)}</b></td><td>${c.avaliacao?c.avaliacao+"⭐":"—"}</td></tr>`+
+    (o?`<tr><td colspan="9" class="dt">Criada ${dt(c.criado_em)} · Última ação ${dt(c.atualizado_em)}${c.coletado_em?" · Coletado/embarcou "+dt(c.coletado_em):""} · Negociação: motoboy ${c.rodada||0}/3, cliente ${c.rodada_cli||0}/3${c.contra_valor?" · contraproposta "+brl(c.contra_valor):""} · ID ${esc(c.id)}</td></tr>`:"");
+  }));
+}
+function ligaLinhas(){document.querySelectorAll("tr.cl").forEach(r=>r.onclick=()=>{const id=r.dataset.id;open.has(id)?open.delete(id):open.add(id);draw()})}
+
+function corridas(){
+  if(!$("tb")){
+    $("app").innerHTML=`<div class="bar"><select id="fs"><option value="">Todos os status</option>${Object.keys(ST).map(k=>`<option value="${k}">${ST[k][0]}</option>`).join("")}</select><select id="ft"><option value="">Passageiro + Entrega</option><option value="passageiro">🧍 Passageiro</option><option value="entrega">📦 Entrega</option></select><input id="fq" placeholder="Buscar cliente, motoboy ou endereço" style="flex:1;min-width:200px"></div><div id="tb"></div>`;
+    $("fs").onchange=e=>{F.st=e.target.value;corridas()};$("ft").onchange=e=>{F.tp=e.target.value;corridas()};$("fq").oninput=e=>{F.q=e.target.value.toLowerCase();corridas()};
+    $("fs").value=F.st;$("ft").value=F.tp;$("fq").value=F.q;
+  }
+  const l=D.c.filter(c=>(!F.st||c.status===F.st)&&(!F.tp||(c.tipo||"passageiro")===F.tp)&&(!F.q||[c.cliente_nome,c.cliente_tel,c.destino_end,c.origem_end,mNome(c.motoboy_id)].join(" ").toLowerCase().includes(F.q)));
+  $("tb").innerHTML=`<div class="k" style="margin-bottom:6px">${l.length} corrida(s) · últimos 30 dias · toque na linha para detalhes</div>`+lista(l.slice(0,300));
+  ligaLinhas();
+}
+
+function motoboys(){
+  $("app").innerHTML=tbl(["Motoboy","Status","Visto","Telefone","R$/km","Corridas","Concluídas","Recusadas","Ganhos (30 d)","Nota"],D.m.slice().sort((a,b)=>onl(b)-onl(a)).map(m=>{
+    const l=D.c.filter(c=>c.motoboy_id===m.id),ok=l.filter(c=>c.status==="concluida"),nt=l.filter(c=>c.avaliacao);
+    return `<tr><td><b>${esc(m.nome)}</b></td><td><span class="pill ${onl(m)?"ok":"mut"}">${onl(m)?"🟢 Online":"⚪ Offline"}</span></td><td>${ago(m.atualizado_em)}</td><td>${wa(m.telefone)}</td><td>${brl(m.preco_km)}</td><td>${l.length}</td><td>${ok.length}</td><td>${l.filter(c=>c.status==="recusada").length}</td><td><b>${brl(S(ok))}</b></td><td>${nt.length?(nt.reduce((t,c)=>t+c.avaliacao,0)/nt.length).toFixed(1)+"⭐":"—"}</td></tr>`}));
+}
+
+function clientes(){
+  const g={};
+  D.c.forEach(c=>{const k=(c.cliente_tel||"")+"|"+(c.cliente_nome||"");(g[k]=g[k]||{n:c.cliente_nome,t:c.cliente_tel,l:[]}).l.push(c)});
+  $("app").innerHTML=tbl(["Cliente","WhatsApp","Pedidos","Concluídos","Cancel./recus.","Gasto","🧍 / 📦","Último pedido"],Object.values(g).sort((a,b)=>b.l.length-a.l.length).map(x=>{
+    const ok=x.l.filter(c=>c.status==="concluida");
+    return `<tr><td><b>${esc(x.n)}</b></td><td>${wa(x.t)}</td><td>${x.l.length}</td><td>${ok.length}</td><td>${x.l.filter(c=>["cancelada","recusada"].includes(c.status)).length}</td><td>${brl(S(ok))}</td><td>${x.l.filter(c=>c.tipo!=="entrega").length} / ${x.l.filter(c=>c.tipo==="entrega").length}</td><td>${ago(x.l[0].criado_em)}</td></tr>`}));
+}
+
+function mapa(){
+  if(!M){
+    $("app").innerHTML='<div id="map"></div>';
+    M=L.map("map",{zoomControl:true}).setView([-27.816,-50.326],13);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(M);
+    G=L.layerGroup().addTo(M);M._fit=true;
+  }
+  G.clearLayers();const pts=[];
+  const ic=e=>L.divIcon({html:`<div style="font-size:26px;filter:drop-shadow(0 2px 3px #0009)">${e}</div>`,className:"",iconSize:[30,30],iconAnchor:[15,15]});
+  D.m.filter(m=>onl(m)&&m.lat!=null).forEach(m=>{pts.push([+m.lat,+m.lng]);L.marker([+m.lat,+m.lng],{icon:ic("🏍️")}).bindPopup(`<b>${esc(m.nome)}</b><br>${brl(m.preco_km)}/km · visto ${ago(m.atualizado_em)}`).addTo(G)});
+  D.c.filter(c=>ATIVAS.includes(c.status)&&c.destino_lat!=null).forEach(c=>{
+    const d=[+c.destino_lat,+c.destino_lng];pts.push(d);
+    L.marker(d,{icon:ic("🏁")}).bindPopup(`${TP[c.tipo]||TP.passageiro} · ${pill(c.status)}<br>${esc(c.cliente_nome)} → ${esc(c.destino_end)}<br><b>${brl(c.valor)}</b>`).addTo(G);
+    if(c.origem_lat!=null){const o=[+c.origem_lat,+c.origem_lng];pts.push(o);L.marker(o,{icon:ic("🟢")}).bindPopup("Embarque/coleta: "+esc(c.origem_end)).addTo(G);L.polyline([o,d],{color:"#ff7a1a",weight:3,dashArray:"6 8"}).addTo(G)}
+  });
+  if(M._fit&&pts.length){M.fitBounds(L.latLngBounds(pts),{padding:[40,40],maxZoom:15});M._fit=false}
+}
+
+$("sair").onclick=()=>{localStorage.removeItem(SK);clearInterval(timer);login()};
+sess()?iniciar():login();
+</script>
+</body>
+</html>
